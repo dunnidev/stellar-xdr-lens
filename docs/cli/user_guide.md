@@ -55,7 +55,7 @@ $ lens decode [base64-payload] [flags]
 | `--json` | | Emit stable, machine-readable JSON representation. |
 | `--compact` | | Emit single-line compact JSON (with `--json`). |
 | `--yaml` | | Emit formatted YAML. |
-| `--format` | | Format name: `tree`, `json`, `summary`, `txrep`, `csv`, `html`, `mermaid`, `junit`. |
+| `--format` | | Format name: `tree`, `json`, `summary`, `txrep`, `csv`, `html`, `mermaid`, `junit`, `latex`, `dot`. |
 | `--type` | `-t` | Explicit XDR type (skips type guessing). See `lens types`. |
 | `--depth` | | Limit tree recursion depth (0 = unlimited). |
 | `--show-types` | | Annotate each node with its concrete XDR type. |
@@ -123,7 +123,7 @@ Operands can be base64 strings, file paths, or `-` for `stdin`.
 | `--unified` | Unified diff format (like `diff -u`). |
 | `--side-by-side`| Two-column terminal diff. |
 | `--stats` | Numeric breakdown of changes (additions, deletions, modifications). |
-| `--summary` | Compact single-line summary of differences. |
+| `--summary` | Table of change counts by top-level field path (same as `--format summary`). |
 | `--mask-paths`, `--mask-path` | Exclude paths from diff comparison entirely (prevents false positive exits). |
 | `--exclude-paths`, `--ignore-path` | Suppress changes from output display. |
 | `--diff-threshold` | Numerical tolerance: suppress numeric differences below delta. |
@@ -205,6 +205,7 @@ $ lens explain <envelope> [flags]
 | `--reference-time` | Reference timestamp (RFC 3339 or Unix seconds) for expiration verification. |
 | `--fail-on-error` | Exit with code 2 if the transaction failed. |
 | `--markdown` | Emit GitHub-flavored Markdown tables. |
+| `--format sarif` | Emit SARIF 2.1.0 for GitHub Code Scanning or GitLab Security. |
 | `--json` | Emit diagnostic report as structured JSON. |
 | `--verbose`, `-v` | Include protocol constants alongside explanations. |
 | `--network` | Stellar Expert network for clickable address links: `public` (default) or `testnet`; empty disables links. |

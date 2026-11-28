@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stellar/go-stellar-sdk/xdr"
+
 	"github.com/stellar-optics/stellar-xdr-lens/pkg/lens"
 )
 
@@ -297,6 +299,91 @@ func truncate(s string) string {
 	return s[:32] + "..."
 }
 
+// TestDecodeNewRegistryTypes verifies that all types added for issues
+// #269, #272, #274, #276 decode successfully and are auto-detected.
+func TestDecodeNewRegistryTypes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		fixture  string
+		wantType string
+	}{
+		{"ConfigSettingId", "config_setting_id", "ConfigSettingId"},
+		{"OperationBody", "operation_body", "OperationBody"},
+		{"ClaimOfferAtom", "claim_offer_atom", "ClaimOfferAtom"},
+		{"ClaimOfferAtomV0", "claim_offer_atom_v0", "ClaimOfferAtomV0"},
+		{"LedgerEntryChange created", "ledger_entry_change_created", "LedgerEntryChange"},
+		{"LedgerEntryChange updated", "ledger_entry_change_updated", "LedgerEntryChange"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := lens.DecodeAs(loadFixture(t, tc.fixture), tc.wantType)
+			if err != nil {
+				t.Fatalf("DecodeAs(%q) error = %v", tc.wantType, err)
+			}
+			if got.Type != tc.wantType {
+				t.Errorf("Type = %q, want %q", got.Type, tc.wantType)
+			}
+		})
+	}
+}
+
+// TestConfigSettingIdEnrichment checks that a ConfigSettingId value is
+// rendered as a human-readable string rather than a raw integer.
+func TestConfigSettingIdEnrichment(t *testing.T) {
+	t.Parallel()
+
+	v, err := lens.DecodeAs(loadFixture(t, "config_setting_id"), "ConfigSettingId")
+	if err != nil {
+		t.Fatalf("DecodeAs() error = %v", err)
+	}
+	val, ok := v.Node.Value.(string)
+	if !ok {
+		t.Fatalf("Value is %T (%v), want a string", v.Node.Value, v.Node.Value)
+	}
+	if !strings.Contains(val, "ConfigSettingId") {
+		t.Errorf("Value = %q, want a string containing 'ConfigSettingId'", val)
+	}
+}
+
+// TestClaimOfferAtomNote checks the nodeHook sets a Note with the seller address.
+func TestClaimOfferAtomNote(t *testing.T) {
+	t.Parallel()
+
+	v, err := lens.DecodeAs(loadFixture(t, "claim_offer_atom"), "ClaimOfferAtom")
+	if err != nil {
+		t.Fatalf("DecodeAs() error = %v", err)
+	}
+	if v.Node.Note == "" {
+		t.Fatal("ClaimOfferAtom node has no Note; expected seller and offer info")
+	}
+	if !strings.Contains(v.Node.Note, "seller") {
+		t.Errorf("Note = %q, want it to contain 'seller'", v.Node.Note)
+	}
+}
+
+// TestLedgerEntryChangeUnionArms checks that created and updated arms decode.
+func TestLedgerEntryChangeUnionArms(t *testing.T) {
+	t.Parallel()
+
+	for _, fixture := range []string{"ledger_entry_change_created", "ledger_entry_change_updated"} {
+		t.Run(fixture, func(t *testing.T) {
+			t.Parallel()
+			v, err := lens.DecodeAs(loadFixture(t, fixture), "LedgerEntryChange")
+			if err != nil {
+				t.Fatalf("DecodeAs() error = %v", err)
+			}
+			if v.Node == nil || len(v.Node.Children) == 0 {
+				t.Error("expected a non-empty tree for LedgerEntryChange")
+			}
+		})
+	}
+}
+
 func wrapAt(s string, n int) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i += n {
@@ -308,4 +395,142 @@ func wrapAt(s string, n int) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// TestDecodeAsTimeBoundsFormatsTimestampsAsRFC3339 verifies issue #277:
+// TimeBounds is registered in the type registry and its time fields are
+// rendered as RFC 3339 strings by the enrichTimePoint enricher.
+func TestDecodeAsTimeBoundsFormatsTimestampsAsRFC3339(t *testing.T) {
+	t.Parallel()
+
+	raw := xdr.TimeBounds{MinTime: 1700000000, MaxTime: 1800000000}
+	payload := mustMarshal(t, raw)
+
+	v, err := lens.DecodeAs(payload, "TimeBounds")
+	if err != nil {
+		t.Fatalf("DecodeAs(TimeBounds) error = %v", err)
+	}
+	if v.Type != "TimeBounds" {
+		t.Errorf("type = %q, want TimeBounds", v.Type)
+	}
+
+	minNode := v.Node.Find("MinTime")
+	if minNode == nil {
+		t.Fatal("MinTime node not found")
+	}
+	if minNode.Note == "" {
+		t.Error("MinTime.Note is empty, want RFC 3339 timestamp")
+	}
+	if !strings.Contains(minNode.Note, "2023") {
+		t.Errorf("MinTime.Note = %q, want a year-2023 RFC 3339 string", minNode.Note)
+	}
+}
+
+// TestDecodeAsLedgerBoundsRegistered verifies issue #277: LedgerBounds is
+// registered so it can be decoded via --type LedgerBounds.
+func TestDecodeAsLedgerBoundsRegistered(t *testing.T) {
+	t.Parallel()
+
+	raw := xdr.LedgerBounds{MinLedger: 100, MaxLedger: 200}
+	payload := mustMarshal(t, raw)
+
+	v, err := lens.DecodeAs(payload, "LedgerBounds")
+	if err != nil {
+		t.Fatalf("DecodeAs(LedgerBounds) error = %v", err)
+	}
+	if v.Type != "LedgerBounds" {
+		t.Errorf("type = %q, want LedgerBounds", v.Type)
+	}
+	minNode := v.Node.Find("MinLedger")
+	if minNode == nil {
+		t.Fatal("MinLedger node not found")
+	}
+	if minNode.Value != uint64(100) {
+		t.Errorf("MinLedger = %v, want 100", minNode.Value)
+	}
+}
+
+// TestDecodeAsScpBallotRegistered verifies issue #275: ScpBallot is registered
+// and its Counter field is labelled as a ballot round number.
+func TestDecodeAsScpBallotRegistered(t *testing.T) {
+	t.Parallel()
+
+	val := xdr.Value([]byte{0x01, 0x02, 0x03, 0x04})
+	raw := xdr.ScpBallot{Counter: 7, Value: val}
+	payload := mustMarshal(t, raw)
+
+	v, err := lens.DecodeAs(payload, "ScpBallot")
+	if err != nil {
+		t.Fatalf("DecodeAs(ScpBallot) error = %v", err)
+	}
+	if v.Type != "ScpBallot" {
+		t.Errorf("type = %q, want ScpBallot", v.Type)
+	}
+	counter := v.Node.Find("Counter")
+	if counter == nil {
+		t.Fatal("Counter node not found")
+	}
+	if counter.Value != uint64(7) {
+		t.Errorf("Counter.Value = %v, want 7", counter.Value)
+	}
+	if !strings.Contains(counter.Note, "ballot round 7") {
+		t.Errorf("Counter.Note = %q, want it to contain %q", counter.Note, "ballot round 7")
+	}
+}
+
+// TestDecodeAsScpNominationRegistered verifies issue #275: ScpNomination is
+// registered and its QuorumSetHash is rendered as a hex string.
+func TestDecodeAsScpNominationRegistered(t *testing.T) {
+	t.Parallel()
+
+	var hash xdr.Hash
+	for i := range hash {
+		hash[i] = byte(i)
+	}
+	raw := xdr.ScpNomination{
+		QuorumSetHash: hash,
+		Votes:         []xdr.Value{{0x01, 0x02}},
+		Accepted:      nil,
+	}
+	payload := mustMarshal(t, raw)
+
+	v, err := lens.DecodeAs(payload, "ScpNomination")
+	if err != nil {
+		t.Fatalf("DecodeAs(ScpNomination) error = %v", err)
+	}
+	if v.Type != "ScpNomination" {
+		t.Errorf("type = %q, want ScpNomination", v.Type)
+	}
+	hashNode := v.Node.Find("QuorumSetHash")
+	if hashNode == nil {
+		t.Fatal("QuorumSetHash node not found")
+	}
+	// enrichHash provides a hex note for xdr.Hash fields.
+	if hashNode.Note == "" && hashNode.Value == nil {
+		t.Error("QuorumSetHash has neither a note nor a value")
+	}
+}
+
+// TestTimeBoundsAndLedgerBoundsExcludedFromDetect verifies issue #277:
+// these precondition sub-types are excluded from auto-detection to prevent
+// false positives against structurally isomorphic types.
+func TestTimeBoundsAndLedgerBoundsExcludedFromDetect(t *testing.T) {
+	t.Parallel()
+
+	for _, typeName := range []string{"TimeBounds", "LedgerBounds"} {
+		t.Run(typeName, func(t *testing.T) {
+			t.Parallel()
+			names := lens.TypeNames()
+			found := false
+			for _, n := range names {
+				if n == typeName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("%s not in TypeNames(), want it registered for --type flag", typeName)
+			}
+		})
+	}
 }

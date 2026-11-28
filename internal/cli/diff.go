@@ -23,6 +23,7 @@ func newDiffCmd(g *globalFlags, stdout io.Writer, stdin io.Reader) *cobra.Comman
 		sideBySide       bool
 		exitDiff         bool
 		alignLists       bool
+		alignOps         bool
 		semantic         bool
 		unorderedSigners bool
 		statsOnly        bool
@@ -117,7 +118,7 @@ These are mutually exclusive with each other and with --json/--stats/--summary.`
 					// standard text diff
 				case "json":
 					asJSON = true
-				case "json-patch":
+				case "json-patch", "patch":
 					jsonPatch = true
 				case "unified":
 					unified = true
@@ -128,7 +129,7 @@ These are mutually exclusive with each other and with --json/--stats/--summary.`
 				case "summary":
 					summaryOnly = true
 				default:
-					return fmt.Errorf("%w: unknown format %q (allowed: text, json, json-patch, unified, side-by-side, stats, summary)",
+					return fmt.Errorf("%w: unknown format %q (allowed: text, json, json-patch, patch, unified, side-by-side, stats, summary)",
 						lens.ErrInvalidArgument, formatName)
 				}
 			}
@@ -185,6 +186,7 @@ These are mutually exclusive with each other and with --json/--stats/--summary.`
 
 			result, err := lens.DiffBase64WithOptions(left, right, typeName, lens.DiffOptions{
 				AlignLists:       alignLists,
+				AlignOps:         alignOps,
 				Semantic:         semantic,
 				UnorderedSigners: unorderedSigners,
 				Filter:           filter,
@@ -334,6 +336,8 @@ These are mutually exclusive with each other and with --json/--stats/--summary.`
 	cmd.Flags().IntVar(&sideWidth, "side-by-side-width", 160, "total column width for --side-by-side")
 	cmd.Flags().BoolVar(&alignLists, "align", false,
 		"align list elements with LCS to reduce insertion and removal noise")
+	cmd.Flags().BoolVar(&alignOps, "align-ops", false,
+		"detect reordered operations and report them as reorder changes instead of removal/addition pairs")
 	cmd.Flags().BoolVar(&semantic, "semantic", false,
 		"compare supported values semantically, including exact ScVal wide integers")
 	cmd.Flags().BoolVar(&unorderedSigners, "unordered-signers", false,
@@ -342,6 +346,8 @@ These are mutually exclusive with each other and with --json/--stats/--summary.`
 		"compare the Soroban ledger footprints of the two values as sets")
 	cmd.Flags().BoolVar(&statsOnly, "stats", false,
 		"print only the statistical summary of the diff")
+	cmd.Flags().BoolVar(&summaryOnly, "summary", false,
+		"print a table of change counts by top-level field path")
 	cmd.Flags().Float64Var(&diffThreshold, "diff-threshold", 0,
 		"ignore scalar numeric differences below the given delta")
 	cmd.Flags().BoolVar(&exitDiff, "exit-code", false,
